@@ -36,12 +36,12 @@
 
 <script>
 // --- 設定 (Pythonistaの数値を調整して反映) ---
-const SWARM_SIZE = 10;
+const SWARM_SIZE = 15;
 const MAX_SPEED = 4;        // Web用に調整
 const PANIC_SPEED = 8;      // Web用に調整
 const COLLISION_DISTANCE = 40; 
 const KISS_COOLDOWN = 60;
-const GAME_OVER_LIMIT = 100;
+const GAME_OVER_LIMIT = 20;
 const FLEE_FORCE = 0.5;     // 逃げる力
 const RETURN_FORCE = 0.2;  // 画面端から戻る力
 
@@ -365,4 +365,5 @@ startOverlay.addEventListener('touchstart', initGame);
 </body>
 
 </html>
+
 
