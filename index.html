@@ -176,7 +176,7 @@ class Boid {
         // 進行方向に向ける
         const angle = Math.atan2(this.vy, this.vx);
         ctx.rotate(angle + Math.PI); // 画像の向きに合わせて補正
-        const size = 40; // サイズ調整
+        const size = 100; // サイズ調整
         ctx.drawImage(img, -size/2, -size/2, size, size);
         ctx.restore();
     }
