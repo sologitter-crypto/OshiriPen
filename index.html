@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Swarm Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #003f67; touch-action: none; }
+        canvas { display: block; }
+        #score {
+            position: absolute; top: 20px; left: 30px;
+            color: white; font-family: Futura, sans-serif; font-size: 40px;
+            pointer-events: none; user-select: none;
+        }
+        #gameOver {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            color: red; font-family: Futura, sans-serif; font-size: 60px; font-weight: bold;
+            pointer-events: none; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            white-space: nowrap;
+        }
+        #startOverlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex;
+            justify-content: center; align-items: center; color: white; font-size: 24px;
+            font-family: sans-serif; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="score">0</div>
+<div id="gameOver">GAME OVER</div>
+<div id="startOverlay">Tap to Start</div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+// --- 設定 (Pythonistaの数値を調整して反映) ---
+const SWARM_SIZE = 50;
+const MAX_SPEED = 4;        // Web用に調整
+const PANIC_SPEED = 8;      // Web用に調整
+const COLLISION_DISTANCE = 40; 
+const KISS_COOLDOWN = 60;
+const GAME_OVER_LIMIT = 100;
+const FLEE_FORCE = 0.5;     // 逃げる力
+const RETURN_FORCE = 0.05;  // 画面端から戻る力
+
+// --- アセット読み込み ---
+const images = {};
+const sounds = {};
+const assetList = {
+    boid1: 'IMG_8941.PNG',
+    boid2: 'IMG_8943.PNG',
+    bg: 'IMG_8945.PNG',
+    heart: 'Heart.PNG' 
+};
+const soundList = {
+    kiss: 'おしりぺん.m4a',
+    panic: 'わぁ〜.m4a',
+    gameOver: 'game_over.mp3'
+};
+
+// 画像プリロード
+for (let key in assetList) {
+    images[key] = new Image();
+    images[key].src = assetList[key];
+}
+// 音声プリロード
+for (let key in soundList) {
+    sounds[key] = new Audio(soundList[key]);
+}
+
+// 効果音再生用ヘルパー（連打対応）
+function playSound(name) {
+    const s = sounds[name];
+    if (s) {
+        const clone = s.cloneNode();
+        clone.volume = 0.5; // 音量調整
+        clone.play().catch(e => console.log("Audio blocked:", e));
+    }
+}
+
+// --- ゲーム変数 ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const gameOverEl = document.getElementById('gameOver');
+const startOverlay = document.getElementById('startOverlay');
+
+let width, height;
+let swarm = [];
+let kissCount = 0;
+let isGameOver = false;
+let isStarted = false;
+let effects = []; // ハートエフェクトなど
+
+// Boidクラス相当
+class Boid {
+    constructor() {
+        this.imgKey = Math.random() < 0.5 ? 'boid1' : 'boid2';
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        const a = Math.random() * Math.PI * 2;
+        this.vx = Math.cos(a) * 2;
+        this.vy = Math.sin(a) * 2;
+        this.kissTimer = 0;
+        this.startled = false;
+        this.fleePos = null; // {x, y}
+    }
+
+    update(neighbors) {
+        if (this.kissTimer > 0) this.kissTimer--;
+
+        // Rule 2: Separation (離れる)
+        let cx = 0, cy = 0;
+        neighbors.forEach(n => {
+            const dx = n.x - this.x;
+            const dy = n.y - this.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < 30) {
+                cx -= dx;
+                cy -= dy;
+            }
+        });
+        this.vx += cx * 0.05; // 係数調整
+        this.vy += cy * 0.05;
+
+        // Rule 3: Alignment (合わせる)
+        if (neighbors.length > 0) {
+            let avgVx = 0, avgVy = 0;
+            neighbors.forEach(n => {
+                avgVx += n.vx;
+                avgVy += n.vy;
+            });
+            avgVx /= neighbors.length;
+            avgVy /= neighbors.length;
+            this.vx += avgVx * 0.05;
+            this.vy += avgVy * 0.05;
+        }
+
+        // Rule 4: Bounds (画面内維持 - 強く戻る)
+        if (this.x < 0) this.vx += MAX_SPEED * RETURN_FORCE;
+        if (this.x > width) this.vx -= MAX_SPEED * RETURN_FORCE;
+        if (this.y < 0) this.vy += MAX_SPEED * RETURN_FORCE;
+        if (this.y > height) this.vy -= MAX_SPEED * RETURN_FORCE;
+
+        // Panic (逃げる)
+        if (this.startled && this.fleePos) {
+            const dx = this.x - this.fleePos.x;
+            const dy = this.y - this.fleePos.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > 0) {
+                this.vx += (dx / dist) * FLEE_FORCE * 5; // 力を調整
+                this.vy += (dy / dist) * FLEE_FORCE * 5;
+            }
+        }
+
+        // 速度制限
+        const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+        const limit = this.startled ? PANIC_SPEED : MAX_SPEED;
+        if (speed > limit) {
+            this.vx = (this.vx / speed) * limit;
+            this.vy = (this.vy / speed) * limit;
+        }
+
+        this.x += this.vx;
+        this.y += this.vy;
+    }
+
+    draw() {
+        const img = images[this.imgKey];
+        if (!img.complete) return;
+        
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        // 進行方向に向ける
+        const angle = Math.atan2(this.vy, this.vx);
+        ctx.rotate(angle + Math.PI); // 画像の向きに合わせて補正
+        const size = 40; // サイズ調整
+        ctx.drawImage(img, -size/2, -size/2, size, size);
+        ctx.restore();
+    }
+}
+
+// エフェクトクラス
+class HeartEffect {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.life = 1.0; // 1.0 -> 0.0
+    }
+    update() {
+        this.y -= 1; // 上に昇る
+        this.life -= 0.02; // 薄くなる
+    }
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.life);
+        const img = images['heart'];
+        const size = 30;
+        if (img.complete) ctx.drawImage(img, this.x - size/2, this.y - size/2, size, size);
+        ctx.restore();
+    }
+}
+
+// 初期化
+function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function initGame() {
+    swarm = [];
+    for (let i = 0; i < SWARM_SIZE; i++) {
+        swarm.push(new Boid());
+    }
+    isStarted = true;
+    startOverlay.style.display = 'none';
+    loop();
+}
+
+// メインループ
+function loop() {
+    if (isGameOver) return;
+    requestAnimationFrame(loop);
+
+    // 背景描画
+    ctx.fillStyle = '#003f67';
+    ctx.fillRect(0, 0, width, height);
+    if (images['bg'].complete) {
+        // 背景画像を画面いっぱいに（アスペクト比維持なしで引き伸ばし）
+        ctx.drawImage(images['bg'], 0, 0, width, height);
+    }
+
+    // 更新 & 描画
+    const neighborDist = Math.min(width, height) / 3;
+
+    swarm.forEach((boid, i) => {
+        // 近隣探索
+        let neighbors = [];
+        swarm.forEach((other, j) => {
+            if (i === j) return;
+            const dx = boid.x - other.x;
+            const dy = boid.y - other.y;
+            if (Math.sqrt(dx*dx + dy*dy) < neighborDist) {
+                neighbors.push(other);
+            }
+        });
+
+        boid.update(neighbors);
+        boid.draw();
+    });
+
+    // 衝突判定 (Kiss)
+    for (let i = 0; i < swarm.length; i++) {
+        for (let j = i + 1; j < swarm.length; j++) {
+            let b1 = swarm[i];
+            let b2 = swarm[j];
+            if (b1.kissTimer === 0 && b2.kissTimer === 0) {
+                const dx = b1.x - b2.x;
+                const dy = b1.y - b2.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (dist < COLLISION_DISTANCE) {
+                    triggerKiss(b1, b2);
+                }
+            }
+        }
+    }
+
+    // エフェクト更新
+    for (let i = effects.length - 1; i >= 0; i--) {
+        effects[i].update();
+        effects[i].draw();
+        if (effects[i].life <= 0) effects.splice(i, 1);
+    }
+}
+
+function triggerKiss(b1, b2) {
+    playSound('kiss');
+    
+    b1.kissTimer = KISS_COOLDOWN;
+    b2.kissTimer = KISS_COOLDOWN;
+    
+    // カウント更新
+    kissCount++;
+    scoreEl.textContent = kissCount;
+
+    // ゲームオーバー判定
+    if (kissCount >= GAME_OVER_LIMIT) {
+        doGameOver();
+        return;
+    }
+
+    // エフェクト追加
+    effects.push(new HeartEffect((b1.x + b2.x)/2, (b1.y + b2.y)/2));
+}
+
+function doGameOver() {
+    isGameOver = true;
+    playSound('gameOver');
+    gameOverEl.style.transform = "translate(-50%, -50%) scale(1.2)";
+    setTimeout(() => {
+        gameOverEl.style.transform = "translate(-50%, -50%) scale(1.0)";
+    }, 200);
+}
+
+// 入力処理 (タッチ/クリック)
+function handleInput(x, y) {
+    if (isGameOver) return;
+    
+    playSound('panic');
+    
+    // フラッシュエフェクト (簡易的)
+    const flash = document.createElement('div');
+    flash.style.position = 'absolute';
+    flash.style.left = (x - 50) + 'px';
+    flash.style.top = (y - 50) + 'px';
+    flash.style.width = '100px';
+    flash.style.height = '100px';
+    flash.style.borderRadius = '50%';
+    flash.style.backgroundColor = 'white';
+    flash.style.opacity = '1';
+    flash.style.transition = 'all 0.5s';
+    flash.style.pointerEvents = 'none';
+    document.body.appendChild(flash);
+    
+    setTimeout(() => {
+        flash.style.transform = 'scale(2)';
+        flash.style.opacity = '0';
+    }, 10);
+    setTimeout(() => flash.remove(), 500);
+
+    // 全員パニック
+    swarm.forEach(b => {
+        b.startled = true;
+        b.fleePos = {x: x, y: y};
+    });
+
+    // 0.5秒後に戻る
+    setTimeout(() => {
+        swarm.forEach(b => {
+            b.startled = false;
+            b.fleePos = null;
+        });
+    }, 500);
+}
+
+canvas.addEventListener('mousedown', e => {
+    handleInput(e.clientX, e.clientY);
+});
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault(); // スクロール防止
+    const touch = e.touches[0];
+    handleInput(touch.clientX, touch.clientY);
+}, {passive: false});
+
+// 初回タップでスタート（音声再生ポリシー対策）
+startOverlay.addEventListener('click', initGame);
+startOverlay.addEventListener('touchstart', initGame);
+
+</script>
+</body>
+</html>
