@@ -7,12 +7,24 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #003f67; touch-action: none; }
         canvas { display: block; }
+        
+        /* スコア（キスカウント） */
         #score {
             position: absolute; top: 20px; left: 30px;
             color: white; font-family: Futura, sans-serif; font-size: 40px;
             pointer-events: none; user-select: none;
             z-index: 10;
         }
+
+        /* タイマー表示（右上） */
+        #timer {
+            position: absolute; top: 20px; right: 30px;
+            color: #ffcc00; font-family: Futura, sans-serif; font-size: 40px;
+            pointer-events: none; user-select: none;
+            z-index: 10;
+        }
+
+        /* ゲームオーバー表示 */
         #gameOver {
             position: absolute; top: 40%; left: 50%;
             transform: translate(-50%, -50%) scale(0);
@@ -22,6 +34,20 @@
             z-index: 20;
             text-shadow: 2px 2px 0 #fff;
         }
+
+        /* クリア表示 */
+        #gameClear {
+            position: absolute; top: 40%; left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            color: #00ff00; /* 緑色 */
+            font-family: Futura, sans-serif; font-size: 60px; font-weight: bold;
+            pointer-events: none; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            white-space: nowrap;
+            z-index: 20;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        /* リトライボタン */
         #retryBtn {
             position: absolute; top: 60%; left: 50%;
             transform: translate(-50%, -50%);
@@ -36,6 +62,8 @@
             transform: translate(-50%, -50%) scale(0.95);
             background: #eee;
         }
+
+        /* スタート画面 */
         #startOverlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.5); display: flex;
@@ -48,21 +76,26 @@
 <body>
 
 <div id="score">0</div>
+<div id="timer">0.00</div>
 <div id="gameOver">GAME OVER</div>
+<div id="gameClear">CLEAR!!</div>
 <div id="retryBtn">RETRY</div>
 <div id="startOverlay">Tap to Start</div>
 <canvas id="gameCanvas"></canvas>
 
 <script>
-// --- 設定 (Pythonistaの数値を調整して反映) ---
+// --- 設定 ---
 const SWARM_SIZE = 15;
-const MAX_SPEED = 4;        // Web用に調整
-const PANIC_SPEED = 8;      // Web用に調整
+const MAX_SPEED = 4;
+const PANIC_SPEED = 8;
 const COLLISION_DISTANCE = 40; 
 const KISS_COOLDOWN = 60;
 const GAME_OVER_LIMIT = 20;
-const FLEE_FORCE = 0.5;     // 逃げる力
-const RETURN_FORCE = 0.2;  // 画面端から戻る力
+const FLEE_FORCE = 0.5;
+const RETURN_FORCE = 0.2;
+
+// ★変更: クリアまでの秒数（ここを変更してください）
+const CLEAR_TIME = 7.0; 
 
 // --- アセット読み込み ---
 const images = {};
@@ -76,25 +109,23 @@ const assetList = {
 const soundList = {
     kiss: 'おしりぺん.m4a',
     panic: 'わぁ〜.m4a',
-    gameOver: 'game_over.mp3'
+    gameOver: 'game_over.mp3',
+    // clear: 'fanfare.mp3' // クリア音があれば追加
 };
 
-// 画像プリロード
 for (let key in assetList) {
     images[key] = new Image();
     images[key].src = assetList[key];
 }
-// 音声プリロード
 for (let key in soundList) {
     sounds[key] = new Audio(soundList[key]);
 }
 
-// 効果音再生用ヘルパー（連打対応）
 function playSound(name) {
     const s = sounds[name];
     if (s) {
         const clone = s.cloneNode();
-        clone.volume = 0.5; // 音量調整
+        clone.volume = 0.5;
         clone.play().catch(e => console.log("Audio blocked:", e));
     }
 }
@@ -103,18 +134,22 @@ function playSound(name) {
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
+const timerEl = document.getElementById('timer');
 const gameOverEl = document.getElementById('gameOver');
+const gameClearEl = document.getElementById('gameClear');
 const retryBtn = document.getElementById('retryBtn');
 const startOverlay = document.getElementById('startOverlay');
 
 let width, height;
 let swarm = [];
 let kissCount = 0;
-let isGameOver = false;
-let isStarted = false;
-let effects = []; // ハートエフェクトなど
+let isGameOver = false; // ゲーム終了フラグ（勝ち負け共通）
+let effects = [];
 
-// Boidクラス相当
+// ★変更: 時間計測用
+let startTime = 0;
+
+// Boidクラス
 class Boid {
     constructor() {
         this.imgKey = Math.random() < 0.5 ? 'boid1' : 'boid2';
@@ -125,13 +160,13 @@ class Boid {
         this.vy = Math.sin(a) * 2;
         this.kissTimer = 0;
         this.startled = false;
-        this.fleePos = null; // {x, y}
+        this.fleePos = null;
     }
 
     update(neighbors) {
         if (this.kissTimer > 0) this.kissTimer--;
 
-        // Rule 2: Separation (離れる)
+        // Separation
         let cx = 0, cy = 0;
         neighbors.forEach(n => {
             const dx = n.x - this.x;
@@ -142,10 +177,10 @@ class Boid {
                 cy -= dy;
             }
         });
-        this.vx += cx * 0.05; // 係数調整
+        this.vx += cx * 0.05;
         this.vy += cy * 0.05;
 
-        // Rule 3: Alignment (合わせる)
+        // Alignment
         if (neighbors.length > 0) {
             let avgVx = 0, avgVy = 0;
             neighbors.forEach(n => {
@@ -158,24 +193,24 @@ class Boid {
             this.vy += avgVy * 0.05;
         }
 
-        // Rule 4: Bounds (画面内維持 - 強く戻る)
+        // Bounds
         if (this.x < 0) this.vx += MAX_SPEED * RETURN_FORCE;
         if (this.x > width) this.vx -= MAX_SPEED * RETURN_FORCE;
         if (this.y < 0) this.vy += MAX_SPEED * RETURN_FORCE;
         if (this.y > height) this.vy -= MAX_SPEED * RETURN_FORCE;
 
-        // Panic (逃げる)
+        // Panic
         if (this.startled && this.fleePos) {
             const dx = this.x - this.fleePos.x;
             const dy = this.y - this.fleePos.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
             if (dist > 0) {
-                this.vx += (dx / dist) * FLEE_FORCE * 5; // 力を調整
+                this.vx += (dx / dist) * FLEE_FORCE * 5;
                 this.vy += (dy / dist) * FLEE_FORCE * 5;
             }
         }
 
-        // 速度制限
+        // Speed Limit
         const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
         const limit = this.startled ? PANIC_SPEED : MAX_SPEED;
         if (speed > limit) {
@@ -193,25 +228,23 @@ class Boid {
         
         ctx.save();
         ctx.translate(this.x, this.y);
-        // 進行方向に向ける
         const angle = Math.atan2(this.vy, this.vx);
-        ctx.rotate(angle + Math.PI); // 画像の向きに合わせて補正
-        const size = 100; // サイズ調整
+        ctx.rotate(angle + Math.PI);
+        const size = 100;
         ctx.drawImage(img, -size/2, -size/2, size, size);
         ctx.restore();
     }
 }
 
-// エフェクトクラス
 class HeartEffect {
     constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.life = 1.0; // 1.0 -> 0.0
+        this.life = 1.0;
     }
     update() {
-        this.y -= 1; // 上に昇る
-        this.life -= 0.02; // 薄くなる
+        this.y -= 1;
+        this.life -= 0.02;
     }
     draw() {
         ctx.save();
@@ -223,7 +256,6 @@ class HeartEffect {
     }
 }
 
-// 初期化
 function resize() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
@@ -236,42 +268,54 @@ function initGame() {
     for (let i = 0; i < SWARM_SIZE; i++) {
         swarm.push(new Boid());
     }
-    isStarted = true;
+    startTime = Date.now(); // 時間計測開始
     startOverlay.style.display = 'none';
+    timerEl.textContent = CLEAR_TIME.toFixed(2);
     loop();
 }
 
-// リトライ処理
 function resetGame() {
     isGameOver = false;
     kissCount = 0;
     scoreEl.textContent = '0';
     effects = [];
     
-    // Boid再生成
     swarm = [];
     for (let i = 0; i < SWARM_SIZE; i++) {
         swarm.push(new Boid());
     }
+    
+    startTime = Date.now(); // 時間リセット
 
     // UIリセット
     gameOverEl.style.transform = "translate(-50%, -50%) scale(0)";
+    gameClearEl.style.transform = "translate(-50%, -50%) scale(0)";
     retryBtn.style.display = 'none';
 
-    // ループ再開
     loop();
 }
 
-// メインループ
 function loop() {
     if (isGameOver) return;
     requestAnimationFrame(loop);
 
-    // 背景描画
+    // ★変更: 時間管理
+    const elapsed = (Date.now() - startTime) / 1000; // 秒単位
+    let remain = CLEAR_TIME - elapsed;
+    
+    if (remain <= 0) {
+        remain = 0;
+        doGameClear(); // クリア処理へ
+        // ここでは return せず、描画を一度更新してから止める形にします（タイマー0.00を表示するため）
+    }
+    timerEl.textContent = remain.toFixed(2);
+    
+    if (isGameOver) return; // クリア判定でフラグが立ったら抜ける
+
+    // 背景
     ctx.fillStyle = '#003f67';
     ctx.fillRect(0, 0, width, height);
     if (images['bg'].complete) {
-        // 背景画像を画面いっぱいに（アスペクト比維持なしで引き伸ばし）
         ctx.drawImage(images['bg'], 0, 0, width, height);
     }
 
@@ -279,7 +323,6 @@ function loop() {
     const neighborDist = Math.min(width, height) / 3;
 
     swarm.forEach((boid, i) => {
-        // 近隣探索
         let neighbors = [];
         swarm.forEach((other, j) => {
             if (i === j) return;
@@ -294,7 +337,7 @@ function loop() {
         boid.draw();
     });
 
-    // 衝突判定 (Kiss)
+    // 衝突判定
     for (let i = 0; i < swarm.length; i++) {
         for (let j = i + 1; j < swarm.length; j++) {
             let b1 = swarm[i];
@@ -311,7 +354,7 @@ function loop() {
         }
     }
 
-    // エフェクト更新
+    // エフェクト
     for (let i = effects.length - 1; i >= 0; i--) {
         effects[i].update();
         effects[i].draw();
@@ -320,22 +363,20 @@ function loop() {
 }
 
 function triggerKiss(b1, b2) {
+    if (isGameOver) return; // 念のため
+
     playSound('kiss');
-    
     b1.kissTimer = KISS_COOLDOWN;
     b2.kissTimer = KISS_COOLDOWN;
     
-    // カウント更新
     kissCount++;
     scoreEl.textContent = kissCount;
 
-    // ゲームオーバー判定
     if (kissCount >= GAME_OVER_LIMIT) {
         doGameOver();
         return;
     }
 
-    // エフェクト追加
     effects.push(new HeartEffect((b1.x + b2.x)/2, (b1.y + b2.y)/2));
 }
 
@@ -347,19 +388,31 @@ function doGameOver() {
         gameOverEl.style.transform = "translate(-50%, -50%) scale(1.0)";
     }, 200);
 
-    // リトライボタン表示 (少し遅らせる)
     setTimeout(() => {
         retryBtn.style.display = 'block';
     }, 800);
 }
 
-// 入力処理 (タッチ/クリック)
+// ★追加: クリア時の処理
+function doGameClear() {
+    isGameOver = true; // ループを止める
+    // playSound('clear'); // クリア音があれば
+    
+    gameClearEl.style.transform = "translate(-50%, -50%) scale(1.2)";
+    setTimeout(() => {
+        gameClearEl.style.transform = "translate(-50%, -50%) scale(1.0)";
+    }, 200);
+
+    setTimeout(() => {
+        retryBtn.style.display = 'block';
+    }, 800);
+}
+
 function handleInput(x, y) {
     if (isGameOver) return;
     
     playSound('panic');
     
-    // フラッシュエフェクト (簡易的)
     const flash = document.createElement('div');
     flash.style.position = 'absolute';
     flash.style.left = (x - 50) + 'px';
@@ -379,13 +432,11 @@ function handleInput(x, y) {
     }, 10);
     setTimeout(() => flash.remove(), 500);
 
-    // 全員パニック
     swarm.forEach(b => {
         b.startled = true;
         b.fleePos = {x: x, y: y};
     });
 
-    // 0.5秒後に戻る
     setTimeout(() => {
         swarm.forEach(b => {
             b.startled = false;
@@ -398,26 +449,23 @@ canvas.addEventListener('mousedown', e => {
     handleInput(e.clientX, e.clientY);
 });
 canvas.addEventListener('touchstart', e => {
-    e.preventDefault(); // スクロール防止
+    e.preventDefault();
     const touch = e.touches[0];
     handleInput(touch.clientX, touch.clientY);
 }, {passive: false});
 
-// 初回タップでスタート（音声再生ポリシー対策）
 startOverlay.addEventListener('click', initGame);
 startOverlay.addEventListener('touchstart', (e) => {
     e.preventDefault(); 
     initGame();
 });
 
-// リトライボタンイベント
 retryBtn.addEventListener('click', resetGame);
 retryBtn.addEventListener('touchstart', (e) => {
-    e.stopPropagation(); // ゲーム画面のタッチイベントに伝播させない
+    e.stopPropagation();
     resetGame();
 });
 
 </script>
 </body>
-
 </html>
