@@ -8,7 +8,7 @@
         body { margin: 0; overflow: hidden; background-color: #003f67; touch-action: none; }
         canvas { display: block; }
         
-        /* スコア（キスカウント） */
+        /* スコア */
         #score {
             position: absolute; top: 20px; left: 30px;
             color: white; font-family: Futura, sans-serif; font-size: 40px;
@@ -16,7 +16,7 @@
             z-index: 10;
         }
 
-        /* タイマー表示（右上） */
+        /* タイマー */
         #timer {
             position: absolute; top: 20px; right: 30px;
             color: #ffcc00; font-family: Futura, sans-serif; font-size: 40px;
@@ -24,7 +24,7 @@
             z-index: 10;
         }
 
-        /* ゲームオーバー表示 */
+        /* ゲームオーバー */
         #gameOver {
             position: absolute; top: 40%; left: 50%;
             transform: translate(-50%, -50%) scale(0);
@@ -35,11 +35,11 @@
             text-shadow: 2px 2px 0 #fff;
         }
 
-        /* クリア表示 */
+        /* クリア */
         #gameClear {
             position: absolute; top: 40%; left: 50%;
             transform: translate(-50%, -50%) scale(0);
-            color: #00ff00; /* 緑色 */
+            color: #00ff00;
             font-family: Futura, sans-serif; font-size: 60px; font-weight: bold;
             pointer-events: none; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             white-space: nowrap;
@@ -84,18 +84,19 @@
 <canvas id="gameCanvas"></canvas>
 
 <script>
-// --- 設定 ---
+// --- 設定 (バランス調整) ---
 const SWARM_SIZE = 15;
 const MAX_SPEED = 4;
 const PANIC_SPEED = 8;
 const COLLISION_DISTANCE = 40; 
 const KISS_COOLDOWN = 60;
 const GAME_OVER_LIMIT = 20;
-const FLEE_FORCE = 0.5;
-const RETURN_FORCE = 0.2;
+const CLEAR_TIME = 7.0;
 
-// ★変更: クリアまでの秒数（ここを変更してください）
-const CLEAR_TIME = 7.0; 
+// ★難易度調整箇所
+const FLEE_FORCE = 0.3;      // 逃げる力 (0.5 -> 0.3 に弱体化)
+const RETURN_FORCE = 1.0;    // 画面に戻る力 (0.2 -> 1.0 に強化)
+const PANIC_DURATION = 300;  // パニック時間ms (500 -> 300 に短縮)
 
 // --- アセット読み込み ---
 const images = {};
@@ -109,8 +110,7 @@ const assetList = {
 const soundList = {
     kiss: 'おしりぺん.m4a',
     panic: 'わぁ〜.m4a',
-    gameOver: 'game_over.mp3',
-    // clear: 'fanfare.mp3' // クリア音があれば追加
+    gameOver: 'game_over.mp3'
 };
 
 for (let key in assetList) {
@@ -143,11 +143,9 @@ const startOverlay = document.getElementById('startOverlay');
 let width, height;
 let swarm = [];
 let kissCount = 0;
-let isGameOver = false; // ゲーム終了フラグ（勝ち負け共通）
-let effects = [];
-
-// ★変更: 時間計測用
+let isGameOver = false;
 let startTime = 0;
+let effects = [];
 
 // Boidクラス
 class Boid {
@@ -193,13 +191,13 @@ class Boid {
             this.vy += avgVy * 0.05;
         }
 
-        // Bounds
+        // Bounds (強化された戻る力を使用)
         if (this.x < 0) this.vx += MAX_SPEED * RETURN_FORCE;
         if (this.x > width) this.vx -= MAX_SPEED * RETURN_FORCE;
         if (this.y < 0) this.vy += MAX_SPEED * RETURN_FORCE;
         if (this.y > height) this.vy -= MAX_SPEED * RETURN_FORCE;
 
-        // Panic
+        // Panic (弱体化された逃げる力を使用)
         if (this.startled && this.fleePos) {
             const dx = this.x - this.fleePos.x;
             const dy = this.y - this.fleePos.y;
@@ -268,7 +266,7 @@ function initGame() {
     for (let i = 0; i < SWARM_SIZE; i++) {
         swarm.push(new Boid());
     }
-    startTime = Date.now(); // 時間計測開始
+    startTime = Date.now();
     startOverlay.style.display = 'none';
     timerEl.textContent = CLEAR_TIME.toFixed(2);
     loop();
@@ -285,9 +283,8 @@ function resetGame() {
         swarm.push(new Boid());
     }
     
-    startTime = Date.now(); // 時間リセット
+    startTime = Date.now();
 
-    // UIリセット
     gameOverEl.style.transform = "translate(-50%, -50%) scale(0)";
     gameClearEl.style.transform = "translate(-50%, -50%) scale(0)";
     retryBtn.style.display = 'none';
@@ -299,27 +296,23 @@ function loop() {
     if (isGameOver) return;
     requestAnimationFrame(loop);
 
-    // ★変更: 時間管理
-    const elapsed = (Date.now() - startTime) / 1000; // 秒単位
+    const elapsed = (Date.now() - startTime) / 1000;
     let remain = CLEAR_TIME - elapsed;
     
     if (remain <= 0) {
         remain = 0;
-        doGameClear(); // クリア処理へ
-        // ここでは return せず、描画を一度更新してから止める形にします（タイマー0.00を表示するため）
+        doGameClear();
     }
     timerEl.textContent = remain.toFixed(2);
     
-    if (isGameOver) return; // クリア判定でフラグが立ったら抜ける
+    if (isGameOver) return;
 
-    // 背景
     ctx.fillStyle = '#003f67';
     ctx.fillRect(0, 0, width, height);
     if (images['bg'].complete) {
         ctx.drawImage(images['bg'], 0, 0, width, height);
     }
 
-    // 更新 & 描画
     const neighborDist = Math.min(width, height) / 3;
 
     swarm.forEach((boid, i) => {
@@ -337,7 +330,6 @@ function loop() {
         boid.draw();
     });
 
-    // 衝突判定
     for (let i = 0; i < swarm.length; i++) {
         for (let j = i + 1; j < swarm.length; j++) {
             let b1 = swarm[i];
@@ -354,7 +346,6 @@ function loop() {
         }
     }
 
-    // エフェクト
     for (let i = effects.length - 1; i >= 0; i--) {
         effects[i].update();
         effects[i].draw();
@@ -363,7 +354,7 @@ function loop() {
 }
 
 function triggerKiss(b1, b2) {
-    if (isGameOver) return; // 念のため
+    if (isGameOver) return;
 
     playSound('kiss');
     b1.kissTimer = KISS_COOLDOWN;
@@ -393,11 +384,8 @@ function doGameOver() {
     }, 800);
 }
 
-// ★追加: クリア時の処理
 function doGameClear() {
-    isGameOver = true; // ループを止める
-    // playSound('clear'); // クリア音があれば
-    
+    isGameOver = true;
     gameClearEl.style.transform = "translate(-50%, -50%) scale(1.2)";
     setTimeout(() => {
         gameClearEl.style.transform = "translate(-50%, -50%) scale(1.0)";
@@ -437,12 +425,13 @@ function handleInput(x, y) {
         b.fleePos = {x: x, y: y};
     });
 
+    // パニック時間を定数で管理
     setTimeout(() => {
         swarm.forEach(b => {
             b.startled = false;
             b.fleePos = null;
         });
-    }, 500);
+    }, PANIC_DURATION);
 }
 
 canvas.addEventListener('mousedown', e => {
