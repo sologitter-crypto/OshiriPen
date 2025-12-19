@@ -85,13 +85,13 @@
 
 <script>
 // --- 設定 (バランス調整) ---
-const SWARM_SIZE = 6;
+const SWARM_SIZE = 10;
 const MAX_SPEED = 4;
 const PANIC_SPEED = 8;
 const COLLISION_DISTANCE = 40; 
 const KISS_COOLDOWN = 60;
 const GAME_OVER_LIMIT = 5;
-const CLEAR_TIME = 7.0;
+const CLEAR_TIME = 10;
 
 // ★難易度調整箇所
 const FLEE_FORCE = 0.3;      // 逃げる力 (0.5 -> 0.3 に弱体化)
@@ -248,7 +248,7 @@ class HeartEffect {
         ctx.save();
         ctx.globalAlpha = Math.max(0, this.life);
         const img = images['heart'];
-        const size = 30;
+        const size = 60;
         if (img.complete) ctx.drawImage(img, this.x - size/2, this.y - size/2, size, size);
         ctx.restore();
     }
