@@ -8,20 +8,31 @@
         body { margin: 0; overflow: hidden; background-color: #003f67; touch-action: none; }
         canvas { display: block; }
         
-        /* スコア */
+        /* スコア (左上) - 背景を追加 */
         #score {
-            position: absolute; top: 20px; left: 30px;
+            position: absolute; top: 20px; left: 20px;
             color: white; font-family: Futura, sans-serif; font-size: 40px;
             pointer-events: none; user-select: none;
             z-index: 10;
+            /* 背景を追加して見やすく設定 */
+            background-color: rgba(0, 0, 0, 0.5); /* 半透明の黒背景 */
+            padding: 5px 20px; /* 文字周りの余白 */
+            border-radius: 15px; /* 角を丸くする */
         }
 
-        /* タイマー */
+        /* タイマー (右上) - 背景を追加 */
         #timer {
-            position: absolute; top: 20px; right: 30px;
-            color: #ffcc00; font-family: Futura, sans-serif; font-size: 40px;
+            position: absolute; top: 20px; right: 20px;
+            color: #ffcc00; font-family: Futura, sans-serif; 
+            font-size: 24px;
+            font-weight: bold;
             pointer-events: none; user-select: none;
             z-index: 10;
+            text-align: right;
+            /* 背景を追加して見やすく設定 */
+            background-color: rgba(0, 0, 0, 0.5); /* 半透明の黒背景 */
+            padding: 10px 20px; /* 文字周りの余白 */
+            border-radius: 15px; /* 角を丸くする */
         }
 
         /* ゲームオーバー */
@@ -75,8 +86,8 @@
 </head>
 <body>
 
-<div id="score">0</div>
-<div id="timer">0.00</div>
+<div id="score">0杯</div>
+<div id="timer">お席残り時間: 0.00</div>
 <div id="gameOver">GAME OVER</div>
 <div id="gameClear">CLEAR!!</div>
 <div id="retryBtn">RETRY</div>
@@ -107,10 +118,10 @@ const assetList = {
     bg: 'IMG_9138.png',
     heart: 'IMG_8965.png',
     gameOverBg: 'IMG_9134.png',
-    tapEffect: 'IMG_9139.png' // ★追加: タップ時のエフェクト画像
+    tapEffect: 'IMG_9139.png' 
 };
 const soundList = {
-    kiss: 'おしりぺん.m4a', // ★注意: 実際のファイル名がカタカナ等の場合、ここも修正してください
+    kiss: 'おしりぺん.m4a', 
     panic: 'わぁ〜.m4a',
     gameOver: 'game_over.mp3',
     bgm: 'IMG_9135.mp3'
@@ -124,7 +135,7 @@ for (let key in soundList) {
     sounds[key] = new Audio(soundList[key]);
     if (key === 'bgm') {
         sounds[key].loop = true;
-        sounds[key].volume = 0.4;
+        sounds[key].volume = 1.0; 
     }
 }
 
@@ -133,7 +144,7 @@ function playSound(name) {
     if (s) {
         if (name !== 'bgm') {
             const clone = s.cloneNode();
-            clone.volume = 1.0; // ★修正: 音量を最大に設定 (以前は0.5でした)
+            clone.volume = 1.0; 
             clone.play().catch(e => console.log("Audio blocked:", e));
         } else {
             s.play().catch(e => console.log("BGM blocked:", e));
@@ -175,7 +186,7 @@ class Boid {
         this.vx = Math.cos(a) * 2;
         this.vy = Math.sin(a) * 2;
         this.kissTimer = 0;
-        this.startled = ;
+        this.startled = false;
         this.fleePos = null;
     }
 
@@ -286,7 +297,7 @@ function initGame() {
     }
     startTime = Date.now();
     startOverlay.style.display = 'none';
-    timerEl.textContent = CLEAR_TIME.toFixed(2);
+    timerEl.textContent = 'お席残り時間: ' + CLEAR_TIME.toFixed(2);
     
     playSound('bgm');
     loop();
@@ -295,7 +306,7 @@ function initGame() {
 function resetGame() {
     isGameOver = false;
     kissCount = 0;
-    scoreEl.textContent = '0';
+    scoreEl.textContent = '0杯';
     effects = [];
     
     swarm = [];
@@ -326,7 +337,7 @@ function loop() {
         remain = 0;
         doGameClear();
     }
-    timerEl.textContent = remain.toFixed(2);
+    timerEl.textContent = 'お席残り時間: ' + remain.toFixed(2);
     
     if (isGameOver) return;
 
@@ -384,7 +395,7 @@ function triggerKiss(b1, b2) {
     b2.kissTimer = KISS_COOLDOWN;
     
     kissCount++;
-    scoreEl.textContent = kissCount;
+    scoreEl.textContent = kissCount + '杯';
 
     if (kissCount >= GAME_OVER_LIMIT) {
         doGameOver();
@@ -435,15 +446,14 @@ function doGameClear() {
 function handleInput(x, y) {
     if (isGameOver) return;
     
-    // ★コメントアウト: パニック音声を無効化
-    // playSound('panic');
+    // playSound('panic'); // コメントアウト
     
-    // ★追加: タップ時の画像演出 (IMG_9139.pngを使用)
+    // タップ演出
     const tapImg = document.createElement('img');
-    tapImg.src = assetList.tapEffect; // IMG_9139.png
+    tapImg.src = assetList.tapEffect; 
     tapImg.style.position = 'absolute';
     
-    const size = 120; // 画像のサイズ（必要に応じて調整してください）
+    const size = 120;
     tapImg.style.left = (x - size/2) + 'px';
     tapImg.style.top = (y - size/2) + 'px';
     tapImg.style.width = size + 'px';
@@ -452,11 +462,10 @@ function handleInput(x, y) {
     tapImg.style.transition = 'all 0.5s ease-out';
     tapImg.style.opacity = '1';
     tapImg.style.zIndex = '50';
-    tapImg.style.transform = 'scale(0.5)'; // 初期状態は少し小さく
+    tapImg.style.transform = 'scale(0.5)';
     
     document.body.appendChild(tapImg);
     
-    // アニメーション: ポンと大きくなって消える
     setTimeout(() => {
         tapImg.style.transform = 'scale(1.2) rotate(10deg)';
         tapImg.style.opacity = '0';
