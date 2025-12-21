@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -16,10 +14,9 @@
             color: white; font-family: Futura, sans-serif; font-size: 40px;
             pointer-events: none; user-select: none;
             z-index: 10;
-            /* 背景を追加して見やすく設定 */
-            background-color: rgba(0, 0, 0, 0.5); /* 半透明の黒背景 */
-            padding: 5px 20px; /* 文字周りの余白 */
-            border-radius: 15px; /* 角を丸くする */
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 20px;
+            border-radius: 15px;
         }
 
         /* タイマー (右上) - 背景を追加 */
@@ -31,10 +28,9 @@
             pointer-events: none; user-select: none;
             z-index: 10;
             text-align: right;
-            /* 背景を追加して見やすく設定 */
-            background-color: rgba(0, 0, 0, 0.5); /* 半透明の黒背景 */
-            padding: 10px 20px; /* 文字周りの余白 */
-            border-radius: 15px; /* 角を丸くする */
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 15px;
         }
 
         /* ゲームオーバー */
@@ -123,7 +119,7 @@ const assetList = {
     tapEffect: 'IMG_9140.png' 
 };
 const soundList = {
-    kiss: 'おしりぺん.m4a', 
+    kiss: 'andy_go.mp3', // ★ここを修正しました
     panic: 'わぁ〜.m4a',
     gameOver: 'game_over.mp3',
     bgm: 'IMG_9135.mp3'
@@ -146,7 +142,7 @@ function playSound(name) {
     if (s) {
         if (name !== 'bgm') {
             const clone = s.cloneNode();
-            clone.volume = 1.0; 
+            clone.volume = 1.0; // 音量最大
             clone.play().catch(e => console.log("Audio blocked:", e));
         } else {
             s.play().catch(e => console.log("BGM blocked:", e));
