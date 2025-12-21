@@ -248,7 +248,7 @@ class HeartEffect {
         ctx.save();
         ctx.globalAlpha = Math.max(0, this.life);
         const img = images['heart'];
-        const size = 60;
+        const size = 130;
         if (img.complete) ctx.drawImage(img, this.x - size/2, this.y - size/2, size, size);
         ctx.restore();
     }
