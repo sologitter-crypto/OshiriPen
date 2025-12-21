@@ -106,13 +106,14 @@ const assetList = {
     boid2: 'andy.png',
     bg: 'IMG_9138.png',
     heart: 'IMG_8965.png',
-    gameOverBg: 'IMG_9134.png' // ★追加: ゲームオーバー時の背景画像
+    gameOverBg: 'IMG_9134.png',
+    tapEffect: 'IMG_9139.png' // ★追加: タップ時のエフェクト画像
 };
 const soundList = {
-    kiss: 'おしりぺん.m4a',
+    kiss: 'おしりぺん.m4a', // ★注意: 実際のファイル名がカタカナ等の場合、ここも修正してください
     panic: 'わぁ〜.m4a',
     gameOver: 'game_over.mp3',
-    bgm: 'IMG_9135.mp3'        // ★追加: BGM
+    bgm: 'IMG_9135.mp3'
 };
 
 for (let key in assetList) {
@@ -122,21 +123,19 @@ for (let key in assetList) {
 for (let key in soundList) {
     sounds[key] = new Audio(soundList[key]);
     if (key === 'bgm') {
-        sounds[key].loop = true; // ★BGMをループ設定に
-        sounds[key].volume = 0.4; // 音量調整（必要に応じて変更）
+        sounds[key].loop = true;
+        sounds[key].volume = 0.4;
     }
 }
 
 function playSound(name) {
     const s = sounds[name];
     if (s) {
-        // BGM以外は重ねて再生できるようにクローンを作成
         if (name !== 'bgm') {
             const clone = s.cloneNode();
-            clone.volume = 0.5;
+            clone.volume = 1.0; // ★修正: 音量を最大に設定 (以前は0.5でした)
             clone.play().catch(e => console.log("Audio blocked:", e));
         } else {
-            // BGMは単一インスタンスで再生
             s.play().catch(e => console.log("BGM blocked:", e));
         }
     }
@@ -176,7 +175,7 @@ class Boid {
         this.vx = Math.cos(a) * 2;
         this.vy = Math.sin(a) * 2;
         this.kissTimer = 0;
-        this.startled = false;
+        this.startled = ;
         this.fleePos = null;
     }
 
@@ -289,9 +288,7 @@ function initGame() {
     startOverlay.style.display = 'none';
     timerEl.textContent = CLEAR_TIME.toFixed(2);
     
-    // ★BGM開始
     playSound('bgm');
-    
     loop();
 }
 
@@ -312,7 +309,6 @@ function resetGame() {
     gameClearEl.style.transform = "translate(-50%, -50%) scale(0)";
     retryBtn.style.display = 'none';
 
-    // ★BGMリセットして再生
     stopBGM();
     playSound('bgm');
 
@@ -401,16 +397,12 @@ function triggerKiss(b1, b2) {
 function doGameOver() {
     isGameOver = true;
     
-    // ★BGMを止める
     sounds['bgm'].pause();
-    
     playSound('gameOver');
     
-    // ★ゲームオーバー専用背景を描画
     if (images['gameOverBg'].complete) {
         ctx.drawImage(images['gameOverBg'], 0, 0, width, height);
     } else {
-        // 画像がまだ読み込まれていない場合のフォールバック（黒背景など）
         ctx.fillStyle = 'black';
         ctx.fillRect(0, 0, width, height);
     }
@@ -428,7 +420,6 @@ function doGameOver() {
 function doGameClear() {
     isGameOver = true;
     
-    // ★BGMを止める
     sounds['bgm'].pause();
 
     gameClearEl.style.transform = "translate(-50%, -50%) scale(1.2)";
@@ -444,27 +435,36 @@ function doGameClear() {
 function handleInput(x, y) {
     if (isGameOver) return;
     
-    playSound('panic');
+    // ★コメントアウト: パニック音声を無効化
+    // playSound('panic');
     
-    const flash = document.createElement('div');
-    flash.style.position = 'absolute';
-    flash.style.left = (x - 50) + 'px';
-    flash.style.top = (y - 50) + 'px';
-    flash.style.width = '100px';
-    flash.style.height = '100px';
-    flash.style.borderRadius = '50%';
-    flash.style.backgroundColor = 'white';
-    flash.style.opacity = '1';
-    flash.style.transition = 'all 0.5s';
-    flash.style.pointerEvents = 'none';
-    document.body.appendChild(flash);
+    // ★追加: タップ時の画像演出 (IMG_9139.pngを使用)
+    const tapImg = document.createElement('img');
+    tapImg.src = assetList.tapEffect; // IMG_9139.png
+    tapImg.style.position = 'absolute';
     
+    const size = 120; // 画像のサイズ（必要に応じて調整してください）
+    tapImg.style.left = (x - size/2) + 'px';
+    tapImg.style.top = (y - size/2) + 'px';
+    tapImg.style.width = size + 'px';
+    tapImg.style.height = 'auto';
+    tapImg.style.pointerEvents = 'none';
+    tapImg.style.transition = 'all 0.5s ease-out';
+    tapImg.style.opacity = '1';
+    tapImg.style.zIndex = '50';
+    tapImg.style.transform = 'scale(0.5)'; // 初期状態は少し小さく
+    
+    document.body.appendChild(tapImg);
+    
+    // アニメーション: ポンと大きくなって消える
     setTimeout(() => {
-        flash.style.transform = 'scale(2)';
-        flash.style.opacity = '0';
-    }, 10);
-    setTimeout(() => flash.remove(), 500);
+        tapImg.style.transform = 'scale(1.2) rotate(10deg)';
+        tapImg.style.opacity = '0';
+    }, 20);
 
+    setTimeout(() => tapImg.remove(), 550);
+
+    // --- パニック動作 ---
     swarm.forEach(b => {
         b.startled = true;
         b.fleePos = {x: x, y: y};
