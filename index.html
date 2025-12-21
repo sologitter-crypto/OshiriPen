@@ -94,9 +94,9 @@ const GAME_OVER_LIMIT = 10;
 const CLEAR_TIME = 10;
 
 // ★難易度調整箇所
-const FLEE_FORCE = 0.3;      // 逃げる力 (0.5 -> 0.3 に弱体化)
-const RETURN_FORCE = 1.0;    // 画面に戻る力 (0.2 -> 1.0 に強化)
-const PANIC_DURATION = 300;  // パニック時間ms (500 -> 300 に短縮)
+const FLEE_FORCE = 0.3;      
+const RETURN_FORCE = 1.0;    
+const PANIC_DURATION = 300;  
 
 // --- アセット読み込み ---
 const images = {};
@@ -105,12 +105,14 @@ const assetList = {
     boid1: 'IMG_8961.png',
     boid2: 'andy.png',
     bg: 'IMG_9131.jpeg',
-    heart: 'IMG_8965.png' 
+    heart: 'IMG_8965.png',
+    gameOverBg: 'IMG_9134.png' // ★追加: ゲームオーバー時の背景画像
 };
 const soundList = {
     kiss: 'おしりぺん.m4a',
     panic: 'わぁ〜.m4a',
-    gameOver: 'game_over.mp3'
+    gameOver: 'game_over.mp3',
+    bgm: 'IMG_9135.mp3'        // ★追加: BGM
 };
 
 for (let key in assetList) {
@@ -119,14 +121,31 @@ for (let key in assetList) {
 }
 for (let key in soundList) {
     sounds[key] = new Audio(soundList[key]);
+    if (key === 'bgm') {
+        sounds[key].loop = true; // ★BGMをループ設定に
+        sounds[key].volume = 0.4; // 音量調整（必要に応じて変更）
+    }
 }
 
 function playSound(name) {
     const s = sounds[name];
     if (s) {
-        const clone = s.cloneNode();
-        clone.volume = 0.5;
-        clone.play().catch(e => console.log("Audio blocked:", e));
+        // BGM以外は重ねて再生できるようにクローンを作成
+        if (name !== 'bgm') {
+            const clone = s.cloneNode();
+            clone.volume = 0.5;
+            clone.play().catch(e => console.log("Audio blocked:", e));
+        } else {
+            // BGMは単一インスタンスで再生
+            s.play().catch(e => console.log("BGM blocked:", e));
+        }
+    }
+}
+
+function stopBGM() {
+    if (sounds['bgm']) {
+        sounds['bgm'].pause();
+        sounds['bgm'].currentTime = 0;
     }
 }
 
@@ -191,13 +210,13 @@ class Boid {
             this.vy += avgVy * 0.05;
         }
 
-        // Bounds (強化された戻る力を使用)
+        // Bounds
         if (this.x < 0) this.vx += MAX_SPEED * RETURN_FORCE;
         if (this.x > width) this.vx -= MAX_SPEED * RETURN_FORCE;
         if (this.y < 0) this.vy += MAX_SPEED * RETURN_FORCE;
         if (this.y > height) this.vy -= MAX_SPEED * RETURN_FORCE;
 
-        // Panic (弱体化された逃げる力を使用)
+        // Panic
         if (this.startled && this.fleePos) {
             const dx = this.x - this.fleePos.x;
             const dy = this.y - this.fleePos.y;
@@ -248,7 +267,7 @@ class HeartEffect {
         ctx.save();
         ctx.globalAlpha = Math.max(0, this.life);
         const img = images['heart'];
-        const size = 130;
+        const size = 130; 
         if (img.complete) ctx.drawImage(img, this.x - size/2, this.y - size/2, size, size);
         ctx.restore();
     }
@@ -269,6 +288,10 @@ function initGame() {
     startTime = Date.now();
     startOverlay.style.display = 'none';
     timerEl.textContent = CLEAR_TIME.toFixed(2);
+    
+    // ★BGM開始
+    playSound('bgm');
+    
     loop();
 }
 
@@ -288,6 +311,10 @@ function resetGame() {
     gameOverEl.style.transform = "translate(-50%, -50%) scale(0)";
     gameClearEl.style.transform = "translate(-50%, -50%) scale(0)";
     retryBtn.style.display = 'none';
+
+    // ★BGMリセットして再生
+    stopBGM();
+    playSound('bgm');
 
     loop();
 }
@@ -373,7 +400,21 @@ function triggerKiss(b1, b2) {
 
 function doGameOver() {
     isGameOver = true;
+    
+    // ★BGMを止める
+    sounds['bgm'].pause();
+    
     playSound('gameOver');
+    
+    // ★ゲームオーバー専用背景を描画
+    if (images['gameOverBg'].complete) {
+        ctx.drawImage(images['gameOverBg'], 0, 0, width, height);
+    } else {
+        // 画像がまだ読み込まれていない場合のフォールバック（黒背景など）
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, width, height);
+    }
+
     gameOverEl.style.transform = "translate(-50%, -50%) scale(1.2)";
     setTimeout(() => {
         gameOverEl.style.transform = "translate(-50%, -50%) scale(1.0)";
@@ -386,6 +427,10 @@ function doGameOver() {
 
 function doGameClear() {
     isGameOver = true;
+    
+    // ★BGMを止める
+    sounds['bgm'].pause();
+
     gameClearEl.style.transform = "translate(-50%, -50%) scale(1.2)";
     setTimeout(() => {
         gameClearEl.style.transform = "translate(-50%, -50%) scale(1.0)";
@@ -425,7 +470,6 @@ function handleInput(x, y) {
         b.fleePos = {x: x, y: y};
     });
 
-    // パニック時間を定数で管理
     setTimeout(() => {
         swarm.forEach(b => {
             b.startled = false;
